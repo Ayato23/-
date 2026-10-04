@@ -1,0 +1,19 @@
+{
+  "name": "fastgrow-recruit-branding-diagnosis",
+  "version": "1.0.0",
+  "description": "FastGrow 採用ブランディング診断（10問の設問 + 企業HP分析）",
+  "private": true,
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0"
+  }
+}
