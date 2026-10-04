@@ -4,8 +4,35 @@ import { computeResult } from "./diagnosis.js";
 const app = document.getElementById("app");
 const AXIS_LABEL = Object.fromEntries(AXES.map((a) => [a.id, a.label]));
 
+// 解析・リード送信の実装。サーバー版は /api を呼ぶ。
+// Artifact 版などは globalThis.DIAGNOSIS_BACKEND で差し替える（HP自動取得なし・AIレビューは任意実行）
+const serverBackend = {
+  canCrawl: true,
+  async analyze(payload) {
+    const res = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || "解析に失敗しました");
+    return body;
+  },
+  async submitLead(payload) {
+    const res = await fetch("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || "送信に失敗しました");
+  },
+  requestAiReview: null,
+};
+const backend = globalThis.DIAGNOSIS_BACKEND ?? serverBackend;
+
 const state = {
-  company: { name: "", url: "", phase: "", target: "", headcount: "" },
+  company: { name: "", url: "", phase: "", target: "", headcount: "", siteText: "" },
   answers: Array(QUESTIONS.length).fill(null),
   current: 0,
   analysis: null,
@@ -70,8 +97,21 @@ function renderCompany() {
         <label class="field">
           <span class="field-label">コーポレートサイト／採用サイトのURL<em class="opt">任意・推奨</em></span>
           <input name="url" type="url" inputmode="url" maxlength="500" value="${esc(c.url)}" placeholder="https://example.co.jp" />
-          <span class="hint">入力いただくと、HPの内容も自動で分析して診断に反映します。</span>
+          <span class="hint">${
+            backend.canCrawl
+              ? "入力いただくと、HPの内容も自動で分析して診断に反映します。"
+              : "結果画面に記録として表示します。"
+          }</span>
         </label>
+        ${
+          backend.canCrawl
+            ? ""
+            : `<label class="field">
+                <span class="field-label">HP・採用ページの文章<em class="opt">任意</em></span>
+                <textarea id="siteText" name="siteText" rows="5" maxlength="30000" placeholder="コーポレートサイトや採用ページの本文をコピーして貼り付けてください">${esc(c.siteText)}</textarea>
+                <span class="hint">貼り付けると、結果画面のAIレビューでHPの内容も踏まえて分析します。</span>
+              </label>`
+        }
         <div class="grid-2">
           ${selectField("phase", "事業フェーズ", COMPANY_FIELDS.phases, c.phase)}
           ${selectField("headcount", "今後1年の採用予定人数", COMPANY_FIELDS.headcounts, c.headcount)}
@@ -99,7 +139,13 @@ function renderCompany() {
       error.hidden = false;
       return;
     }
-    state.company = { ...state.company, ...data, name: data.name.trim(), url: data.url.trim() };
+    state.company = {
+      ...state.company,
+      ...data,
+      name: data.name.trim(),
+      url: data.url.trim(),
+      siteText: (data.siteText || "").trim(),
+    };
     state.current = 0;
     renderQuestion();
   });
@@ -155,11 +201,20 @@ function goNext() {
 }
 
 // --- 解析中 --------------------------------------------------------------
+function answersForPayload() {
+  return QUESTIONS.map((q, i) => ({
+    axis: q.axis,
+    question: q.text,
+    answer: q.options[state.answers[i]].label,
+    score: q.options[state.answers[i]].score,
+  }));
+}
+
 async function runDiagnosis() {
   const steps = [
     "回答を集計しています",
-    state.company.url ? "HPの情報を取得しています" : null,
-    state.company.url ? "採用ブランディングのシグナルを分析しています" : null,
+    backend.canCrawl && state.company.url ? "HPの情報を取得しています" : null,
+    backend.canCrawl && state.company.url ? "採用ブランディングのシグナルを分析しています" : null,
     "課題と打ち手を整理しています",
   ].filter(Boolean);
 
@@ -181,25 +236,14 @@ async function runDiagnosis() {
   mark();
   const timer = setInterval(mark, 2200);
 
-  const answersPayload = QUESTIONS.map((q, i) => ({
-    axis: q.axis,
-    question: q.text,
-    answer: q.options[state.answers[i]].label,
-    score: q.options[state.answers[i]].score,
-  }));
+  const answersPayload = answersForPayload();
 
   let analysis = { site: null, siteError: null, aiReview: null, aiError: null };
+  const { siteText, ...company } = state.company;
   try {
-    const res = await fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company: state.company, answers: answersPayload }),
-    });
-    const body = await res.json();
-    if (res.ok) analysis = body;
-    else analysis.siteError = body.error || "解析に失敗しました";
-  } catch {
-    analysis.siteError = state.company.url ? "サーバーに接続できなかったため、HP分析をスキップしました" : null;
+    analysis = { ...analysis, ...(await backend.analyze({ company, answers: answersPayload })) };
+  } catch (err) {
+    analysis.siteError = state.company.url ? err.message || "HP分析をスキップしました" : null;
   }
   clearInterval(timer);
 
@@ -249,6 +293,7 @@ function radarSvg(scores, compare) {
 
 function siteSection() {
   const { site, siteError } = state.analysis;
+  if (!backend.canCrawl) return "";
   if (!state.company.url) {
     return `
       <section class="card">
@@ -310,9 +355,18 @@ function siteSection() {
 
 function aiSection() {
   const ai = state.analysis.aiReview;
-  if (!ai) return "";
+  if (!ai) {
+    if (!backend.requestAiReview) return "";
+    return `
+      <section class="card ai" id="ai-review">
+        <h3>AIによる詳細レビュー</h3>
+        <p>回答内容${state.company.siteText ? "と貼り付けたHPの文章" : ""}をもとに、候補者から見た印象・課題・記事企画案をAIが作成します。</p>
+        <p class="form-error" hidden></p>
+        <button type="button" class="btn btn-primary" data-action="ai-review">AIレビューを作成する</button>
+      </section>`;
+  }
   return `
-    <section class="card ai">
+    <section class="card ai" id="ai-review">
       <h3>専門家AIによる総評</h3>
       <p>${esc(ai.summary)}</p>
       <div class="ai-view">
@@ -475,24 +529,14 @@ async function submitLead(e) {
   button.textContent = "送信中…";
   try {
     const r = state.result;
-    const res = await fetch("/api/leads", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contact: { name: data.name, role: data.role, email: data.email, phone: data.phone, message: data.message },
-        consent: true,
-        company: state.company,
-        result: { total: r.total, rank: r.rank, type: r.type.name, axisScores: r.axisScores },
-        answers: QUESTIONS.map((q, i) => ({
-          axis: q.axis,
-          question: q.text,
-          answer: q.options[state.answers[i]].label,
-          score: q.options[state.answers[i]].score,
-        })),
-      }),
+    const { siteText, ...company } = state.company;
+    await backend.submitLead({
+      contact: { name: data.name, role: data.role, email: data.email, phone: data.phone, message: data.message },
+      consent: true,
+      company,
+      result: { total: r.total, rank: r.rank, type: r.type.name, axisScores: r.axisScores },
+      answers: answersForPayload(),
     });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || "送信に失敗しました");
     document.getElementById("cta").innerHTML = `
       <h3>お申し込みありがとうございます</h3>
       <p>担当者より2営業日以内にご連絡いたします。診断結果をもとに、御社に合わせたご提案をお持ちします。</p>`;
@@ -500,6 +544,24 @@ async function submitLead(e) {
     button.disabled = false;
     button.textContent = "無料フィードバックを申し込む";
     showError(err.message);
+  }
+}
+
+async function runAiReview(button) {
+  const section = document.getElementById("ai-review");
+  const error = section.querySelector(".form-error");
+  button.disabled = true;
+  button.textContent = "AIが分析しています…（30秒〜1分ほど）";
+  error.hidden = true;
+  try {
+    const { siteText, ...company } = state.company;
+    state.analysis.aiReview = await backend.requestAiReview({ company, siteText, answers: answersForPayload() });
+    section.outerHTML = aiSection();
+  } catch (err) {
+    button.disabled = false;
+    button.textContent = "AIレビューを作成する";
+    error.textContent = err.message || "AIレビューを作成できませんでした。";
+    error.hidden = false;
   }
 }
 
@@ -522,6 +584,7 @@ app.addEventListener("click", (e) => {
       goNext();
     }, 250);
   } else if (action === "next") goNext();
+  else if (action === "ai-review") runAiReview(target);
   else if (action === "prev") {
     if (state.current === 0) renderCompany();
     else {

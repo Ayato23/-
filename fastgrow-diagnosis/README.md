@@ -50,6 +50,19 @@ Node.js 20 以上が必要です。
 | `LEAD_WEBHOOK_URL` | リード受信時にJSONをPOSTする先（Slack Incoming Webhook 等。`text` フィールドを含みます） |
 | `ALLOW_PRIVATE_HOSTS=1` | **開発用**。localhost等へのHP取得を許可（本番では設定しないこと） |
 
+## claude.ai Artifact 版
+
+サーバーを立てずに claude.ai 上で開ける版も生成できます。
+
+```bash
+node artifact/build.mjs dist/fastgrow-diagnosis.html
+```
+
+- `public/` のコードをそのまま1つのHTMLにまとめ、`artifact/backend.js` で処理を差し替えます。
+- HPの自動取得はできないため、代わりに「HP・採用ページの文章」を貼り付ける欄が出ます。
+- AIレビューは結果画面のボタンで実行します（閲覧者のClaudeで実行）。
+- 申し込みは Artifact のデータベース（`leads`）に保存されます。
+
 ## カスタマイズ
 
 文言・設問・タイプ・提案メニュー・CTAはすべて [`public/config.js`](public/config.js) に集約しています。
