@@ -193,7 +193,8 @@ export function recommendNap(naps: NapLog[], k: number = SHRINKAGE_K): NapRecomm
   if (!best) return defaultRecommendation(rated.length, overallMean);
 
   const confidence = confidenceForSampleCount(best.sampleCount);
-  const diff = round2(best.rawMean - overallMean);
+  // Compare the 1-decimal values that are actually displayed so the text adds up.
+  const diff = Number(best.rawMean.toFixed(1)) - Number(overallMean.toFixed(1));
   const comparison =
     diff > 0
       ? `あなたの全体平均${overallMean.toFixed(1)}を${diff.toFixed(1)}上回っています。`
