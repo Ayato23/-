@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { BarChart, LineChart } from 'react-native-chart-kit';
@@ -10,15 +10,12 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { getTimeOfDayBucket, lastNDays } from '@/lib/date';
 import { getNapLogsSince } from '@/lib/napRepository';
+import { confidenceForSampleCount, napPerformanceScore } from '@/lib/recommendation';
 import { getSleepLogsSince } from '@/lib/sleepRepository';
 import type { NapLog, SleepLog } from '@/lib/types';
 import { useTheme } from '@/hooks/use-theme';
 
 const DAYS = 7;
-
-function napPerformanceScore(nap: NapLog): number {
-  return (nap.post_nap_focus + (6 - nap.post_nap_sleepiness)) / 2;
-}
 
 function average(values: number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
@@ -65,6 +62,7 @@ export default function StatsScreen() {
     return Array.from(groups.entries()).map(([label, scores]) => ({
       label,
       value: Math.round(average(scores) * 100) / 100,
+      count: scores.length,
     }));
   }, [napLogs]);
 
@@ -79,6 +77,7 @@ export default function StatsScreen() {
     return Array.from(groups.entries()).map(([label, scores]) => ({
       label,
       value: Math.round(average(scores) * 100) / 100,
+      count: scores.length,
     }));
   }, [napLogs]);
 
@@ -131,19 +130,22 @@ export default function StatsScreen() {
             </ThemedText>
             {loaded &&
               (byLocation.length > 0 ? (
-                <BarChart
-                  data={{
-                    labels: byLocation.map((g) => g.label),
-                    datasets: [{ data: byLocation.map((g) => g.value) }],
-                  }}
-                  width={screenWidth}
-                  height={200}
-                  chartConfig={chartConfig}
-                  style={styles.chart}
-                  fromZero
-                  yAxisLabel=""
-                  yAxisSuffix=""
-                />
+                <>
+                  <BarChart
+                    data={{
+                      labels: byLocation.map((g) => g.label),
+                      datasets: [{ data: byLocation.map((g) => g.value) }],
+                    }}
+                    width={screenWidth}
+                    height={200}
+                    chartConfig={chartConfig}
+                    style={styles.chart}
+                    fromZero
+                    yAxisLabel=""
+                    yAxisSuffix=""
+                  />
+                  <PatternSampleList groups={byLocation} />
+                </>
               ) : (
                 <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
                   まだ仮眠の記録がありません
@@ -157,19 +159,22 @@ export default function StatsScreen() {
             </ThemedText>
             {loaded &&
               (byTimeOfDay.length > 0 ? (
-                <BarChart
-                  data={{
-                    labels: byTimeOfDay.map((g) => g.label),
-                    datasets: [{ data: byTimeOfDay.map((g) => g.value) }],
-                  }}
-                  width={screenWidth}
-                  height={200}
-                  chartConfig={chartConfig}
-                  style={styles.chart}
-                  fromZero
-                  yAxisLabel=""
-                  yAxisSuffix=""
-                />
+                <>
+                  <BarChart
+                    data={{
+                      labels: byTimeOfDay.map((g) => g.label),
+                      datasets: [{ data: byTimeOfDay.map((g) => g.value) }],
+                    }}
+                    width={screenWidth}
+                    height={200}
+                    chartConfig={chartConfig}
+                    style={styles.chart}
+                    fromZero
+                    yAxisLabel=""
+                    yAxisSuffix=""
+                  />
+                  <PatternSampleList groups={byTimeOfDay} />
+                </>
               ) : (
                 <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
                   まだ仮眠の記録がありません
@@ -179,6 +184,44 @@ export default function StatsScreen() {
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
+  );
+}
+
+interface PatternGroup {
+  label: string;
+  value: number;
+  count: number;
+}
+
+/** Per-pattern score with sample count; flags patterns with too few naps to trust. */
+function PatternSampleList({ groups }: { groups: PatternGroup[] }) {
+  const theme = useTheme();
+  return (
+    <View style={styles.sampleList}>
+      {groups.map((g) => {
+        const lowConfidence = confidenceForSampleCount(g.count) === 'low';
+        return (
+          <View key={g.label} style={styles.sampleRow}>
+            <ThemedText type="small" style={styles.sampleLabel}>
+              {g.label}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {g.value.toFixed(1)} (n={g.count})
+            </ThemedText>
+            {lowConfidence && (
+              <ThemedText type="small" style={{ color: theme.danger }}>
+                参考値
+              </ThemedText>
+            )}
+          </View>
+        );
+      })}
+      {groups.some((g) => confidenceForSampleCount(g.count) === 'low') && (
+        <ThemedText type="small" themeColor="textSecondary">
+          ※記録数が少ないパターンは「参考値」と表示しています
+        </ThemedText>
+      )}
+    </View>
   );
 }
 
@@ -214,6 +257,17 @@ const styles = StyleSheet.create({
   chart: {
     borderRadius: Spacing.three,
     marginTop: Spacing.two,
+  },
+  sampleList: {
+    gap: Spacing.one,
+  },
+  sampleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  sampleLabel: {
+    flex: 1,
   },
   empty: {
     paddingVertical: Spacing.four,
