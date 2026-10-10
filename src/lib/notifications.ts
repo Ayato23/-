@@ -17,8 +17,13 @@ export interface NapResultParams {
   [key: string]: string | undefined;
 }
 
-/** Wait until sleep inertia has mostly passed before asking for an evaluation. */
-export const REMINDER_DELAY_SECONDS = 5 * 60;
+/**
+ * Seconds to wait after waking before asking for an evaluation, so sleep inertia has
+ * mostly passed: 15 min, or 30 min after naps of 30 min or more (see docs/phase2-research.md).
+ */
+export function reminderDelaySeconds(napMinutes: number): number {
+  return (napMinutes >= 30 ? 30 : 15) * 60;
+}
 
 const REMINDER_CHANNEL_ID = 'nap-reminder';
 const REMINDER_KIND = 'nap-evaluation';
@@ -69,7 +74,7 @@ export async function ensureNotificationPermission(): Promise<boolean> {
  */
 export async function scheduleNapEvaluationReminder(
   params: NapResultParams,
-  delaySeconds: number = REMINDER_DELAY_SECONDS,
+  delaySeconds: number,
 ): Promise<string | undefined> {
   if (!isSupported) return undefined;
   try {

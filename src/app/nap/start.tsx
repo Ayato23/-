@@ -14,7 +14,7 @@ import {
   cancelNapEvaluationReminder,
   ensureNotificationPermission,
   playTimerCompleteHaptic,
-  REMINDER_DELAY_SECONDS,
+  reminderDelaySeconds,
   scheduleNapEvaluationReminder,
   type NapResultParams,
 } from '@/lib/notifications';
@@ -117,7 +117,7 @@ export default function NapStartScreen() {
     if (early) {
       // The pre-scheduled reminder assumed the full duration; re-schedule from now.
       await cancelNapEvaluationReminder(reminderId);
-      reminderId = await scheduleNapEvaluationReminder(resultParams, REMINDER_DELAY_SECONDS);
+      reminderId = await scheduleNapEvaluationReminder(resultParams, reminderDelaySeconds(actualMinutes));
     }
     router.replace({
       pathname: '/nap/result',
@@ -134,12 +134,12 @@ export default function NapStartScreen() {
     setPhase('running');
 
     // Ask for permission now (while the user is awake) and schedule the evaluation
-    // reminder for "end of nap + 5 min". Scheduling up front keeps it reliable even if
+    // reminder for "end of nap + inertia delay". Scheduling up front keeps it reliable even if
     // the app is suspended during the nap.
     const fullParams = buildResultParams(durationMinutes);
     reminderRef.current = ensureNotificationPermission().then((granted) =>
       granted
-        ? scheduleNapEvaluationReminder(fullParams, durationMinutes * 60 + REMINDER_DELAY_SECONDS)
+        ? scheduleNapEvaluationReminder(fullParams, durationMinutes * 60 + reminderDelaySeconds(durationMinutes))
         : undefined,
     );
 
