@@ -10,6 +10,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { addNapLog } from '@/lib/napRepository';
+import { cancelNapEvaluationReminder } from '@/lib/notifications';
 import type { Posture } from '@/lib/types';
 
 export default function NapResultScreen() {
@@ -21,6 +22,7 @@ export default function NapResultScreen() {
     location_tag: string;
     posture: string;
     pre_nap_sleepiness: string;
+    reminder_id?: string;
   }>();
 
   const [focus, setFocus] = useState<number>();
@@ -44,6 +46,8 @@ export default function NapResultScreen() {
       post_nap_sleepiness: postSleepiness!,
       post_nap_mood: mood,
     });
+    // Evaluated before the reminder fired: no need to nag.
+    await cancelNapEvaluationReminder(params.reminder_id);
     router.dismissAll();
   };
 

@@ -10,6 +10,8 @@ const MIN_GROUP_SIZE = 2;
 /** Sample counts at or above these thresholds raise the confidence level. */
 const MEDIUM_CONFIDENCE_N = 5;
 const HIGH_CONFIDENCE_N = 10;
+/** A more specific pattern wins if its expected score is within this margin of the top pattern. */
+const SPECIFICITY_MARGIN = 0.2;
 
 export type ConfidenceLevel = 'low' | 'medium' | 'high';
 
@@ -189,8 +191,14 @@ export function recommendNap(naps: NapLog[], k: number = SHRINKAGE_K): NapRecomm
     return defaultRecommendation(rated.length, overallMean);
   }
 
-  const best = scorePatterns(rated, k).find((p) => p.sampleCount >= MIN_GROUP_SIZE);
-  if (!best) return defaultRecommendation(rated.length, overallMean);
+  const candidates = scorePatterns(rated, k).filter((p) => p.sampleCount >= MIN_GROUP_SIZE);
+  if (candidates.length === 0) return defaultRecommendation(rated.length, overallMean);
+  // Prefer actionable, specific patterns over broad ones (e.g. 「午後」) when scores are close.
+  const top = candidates[0].expectedScore;
+  const specificity = (c: NapConditions) => Object.keys(c).length;
+  const best = candidates
+    .filter((p) => top - p.expectedScore <= SPECIFICITY_MARGIN)
+    .reduce((a, b) => (specificity(b.conditions) > specificity(a.conditions) ? b : a));
 
   const confidence = confidenceForSampleCount(best.sampleCount);
   // Compare the 1-decimal values that are actually displayed so the text adds up.

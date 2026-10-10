@@ -1,10 +1,12 @@
 import { useCallback, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
+import { QuickStartButton } from '@/components/quick-start-button';
+import { RecommendationCard } from '@/components/recommendation-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -43,54 +45,59 @@ export default function HomeScreen() {
   return (
     <ThemedView style={styles.screen}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedText type="title" style={styles.title}>
-          仮眠最適化
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {formatDateJP(todayString())}
-        </ThemedText>
-
-        <Card style={styles.debtCard}>
-          <ThemedText type="smallBold" themeColor="textSecondary">
-            今日の睡眠負債
+        <ScrollView contentContainerStyle={styles.content}>
+          <ThemedText type="title" style={styles.title}>
+            仮眠最適化
           </ThemedText>
-          {sleepLog === undefined ? (
-            <ThemedText type="subtitle">--</ThemedText>
-          ) : sleepLog === null ? (
-            <>
-              <ThemedText type="subtitle">未記録</ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                今朝の睡眠を記録して負債を確認しましょう
-              </ThemedText>
-            </>
-          ) : (
-            <>
-              <ThemedText type="subtitle" style={{ color: debtColor }}>
-                {debt !== undefined && debt > 0 ? `+${debt.toFixed(1)}` : debt?.toFixed(1)}
-                <ThemedText type="default"> 時間</ThemedText>
-              </ThemedText>
-              <ThemedText type="small" themeColor="textSecondary">
-                睡眠 {sleepLog.sleep_hours.toFixed(1)}h / 目標 {sleepLog.target_sleep_hours}h
-              </ThemedText>
-            </>
-          )}
-        </Card>
-
-        <Card>
-          <ThemedText type="smallBold" themeColor="textSecondary">
-            今日の仮眠
+          <ThemedText type="small" themeColor="textSecondary">
+            {formatDateJP(todayString())}
           </ThemedText>
-          <ThemedText type="subtitle">{todayNaps.length}回</ThemedText>
-        </Card>
 
-        <ThemedView style={styles.actions}>
-          <Button label="仮眠を記録する" onPress={() => router.push('/nap/start')} />
-          <Button
-            label="睡眠を記録する"
-            variant="secondary"
-            onPress={() => router.push('/sleep/log')}
-          />
-        </ThemedView>
+          <Card style={styles.debtCard}>
+            <ThemedText type="smallBold" themeColor="textSecondary">
+              今日の睡眠負債
+            </ThemedText>
+            {sleepLog === undefined ? (
+              <ThemedText type="subtitle">--</ThemedText>
+            ) : sleepLog === null ? (
+              <>
+                <ThemedText type="subtitle">未記録</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  今朝の睡眠を記録して負債を確認しましょう
+                </ThemedText>
+              </>
+            ) : (
+              <>
+                <ThemedText type="subtitle" style={{ color: debtColor }}>
+                  {debt !== undefined && debt > 0 ? `+${debt.toFixed(1)}` : debt?.toFixed(1)}
+                  <ThemedText type="default"> 時間</ThemedText>
+                </ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">
+                  睡眠 {sleepLog.sleep_hours.toFixed(1)}h / 目標 {sleepLog.target_sleep_hours}h
+                </ThemedText>
+              </>
+            )}
+          </Card>
+
+          <Card>
+            <ThemedText type="smallBold" themeColor="textSecondary">
+              今日の仮眠
+            </ThemedText>
+            <ThemedText type="subtitle">{todayNaps.length}回</ThemedText>
+          </Card>
+
+          <RecommendationCard />
+
+          <ThemedView style={styles.actions}>
+            <QuickStartButton />
+            <Button label="仮眠を記録する" onPress={() => router.push('/nap/start')} />
+            <Button
+              label="睡眠を記録する"
+              variant="secondary"
+              onPress={() => router.push('/sleep/log')}
+            />
+          </ThemedView>
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );
@@ -102,6 +109,8 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  content: {
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.four,
     gap: Spacing.three,
@@ -118,6 +127,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     marginTop: Spacing.two,
+    marginBottom: Spacing.four,
     gap: Spacing.three,
   },
 });

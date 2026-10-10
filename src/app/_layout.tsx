@@ -2,10 +2,12 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useColorScheme } from 'react-native';
 
 import { useTheme } from '@/hooks/use-theme';
+import { useNapReminderObserver } from '@/lib/notifications';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const theme = useTheme();
+  useNapReminderObserver();
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>

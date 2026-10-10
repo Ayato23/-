@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, Vibration, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
@@ -10,76 +10,156 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { nowTimeString, todayString } from '@/lib/date';
-import { LOCATION_PRESETS, POSTURES, type Posture } from '@/lib/types';
+import {
+  cancelNapEvaluationReminder,
+  ensureNotificationPermission,
+  playTimerCompleteHaptic,
+  REMINDER_DELAY_SECONDS,
+  scheduleNapEvaluationReminder,
+  type NapResultParams,
+} from '@/lib/notifications';
+import { LOCATION_PRESETS, POSTURES, type LocationPreset, type Posture } from '@/lib/types';
 import { useTheme } from '@/hooks/use-theme';
 
 const DURATION_OPTIONS = [10, 15, 20, 30];
 const DEFAULT_DURATION = 20;
+const MIN_DURATION = 5;
+const MAX_DURATION = 60;
 
 type Phase = 'setup' | 'running';
+
+/**
+ * Optional params to pre-fill the form, e.g. from QuickStartButton or a recommendation:
+ * /nap/start?place=デスク&posture=座位&minutes=20&autostart=1
+ */
+type NapStartParams = {
+  place?: string;
+  posture?: string;
+  minutes?: string;
+  autostart?: string;
+};
+
+function initialLocation(place: string | undefined): { preset: LocationPreset; custom: string } {
+  const trimmed = place?.trim() ?? '';
+  if ((LOCATION_PRESETS as readonly string[]).includes(trimmed)) {
+    return { preset: trimmed as LocationPreset, custom: '' };
+  }
+  if (trimmed) return { preset: 'その他', custom: trimmed };
+  return { preset: LOCATION_PRESETS[0], custom: '' };
+}
+
+function initialPosture(posture: string | undefined): Posture {
+  return (POSTURES as readonly string[]).includes(posture ?? '') ? (posture as Posture) : POSTURES[0];
+}
+
+function initialDuration(minutes: string | undefined): number {
+  const value = Math.round(Number(minutes));
+  if (!minutes || !Number.isFinite(value)) return DEFAULT_DURATION;
+  return Math.min(MAX_DURATION, Math.max(MIN_DURATION, value));
+}
 
 export default function NapStartScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const params = useLocalSearchParams<NapStartParams>();
 
-  const [locationPreset, setLocationPreset] = useState<(typeof LOCATION_PRESETS)[number]>(
-    LOCATION_PRESETS[0],
+  const [locationPreset, setLocationPreset] = useState<LocationPreset>(
+    () => initialLocation(params.place).preset,
   );
-  const [customLocation, setCustomLocation] = useState('');
-  const [posture, setPosture] = useState<Posture>(POSTURES[0]);
-  const [durationMinutes, setDurationMinutes] = useState(DEFAULT_DURATION);
+  const [customLocation, setCustomLocation] = useState(() => initialLocation(params.place).custom);
+  const [posture, setPosture] = useState<Posture>(() => initialPosture(params.posture));
+  const [durationMinutes, setDurationMinutes] = useState(() => initialDuration(params.minutes));
   const [preNapSleepiness, setPreNapSleepiness] = useState<number>();
 
   const [phase, setPhase] = useState<Phase>('setup');
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const startTimeRef = useRef<string>('');
-  const totalSecondsRef = useRef(0);
+  const startedAtRef = useRef(0);
+  const endAtRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const finishedRef = useRef(false);
+  const autoStartedRef = useRef(false);
+  // Resolves to the scheduled evaluation reminder's id (undefined if not scheduled).
+  const reminderRef = useRef<Promise<string | undefined>>(Promise.resolve(undefined));
 
   useEffect(() => {
+    if (params.autostart === '1' && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      startTimer();
+    }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      // Nap abandoned (screen closed mid-timer): drop its reminder.
+      if (startedAtRef.current && !finishedRef.current) {
+        reminderRef.current.then(cancelNapEvaluationReminder);
+      }
     };
   }, []);
 
-  const finishNap = (actualMinutes: number) => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
+  const buildResultParams = (actualMinutes: number): NapResultParams => {
     const location = locationPreset === 'その他' && customLocation.trim() ? customLocation.trim() : locationPreset;
+    return {
+      date: todayString(new Date(startedAtRef.current)),
+      start_time: startTimeRef.current,
+      duration_minutes: String(actualMinutes),
+      location_tag: location,
+      posture,
+      pre_nap_sleepiness: preNapSleepiness ? String(preNapSleepiness) : '',
+    };
+  };
+
+  const finishNap = async (actualMinutes: number, early: boolean) => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    const resultParams = buildResultParams(actualMinutes);
+    let reminderId = await reminderRef.current;
+    if (early) {
+      // The pre-scheduled reminder assumed the full duration; re-schedule from now.
+      await cancelNapEvaluationReminder(reminderId);
+      reminderId = await scheduleNapEvaluationReminder(resultParams, REMINDER_DELAY_SECONDS);
+    }
     router.replace({
       pathname: '/nap/result',
-      params: {
-        date: todayString(),
-        start_time: startTimeRef.current,
-        duration_minutes: String(actualMinutes),
-        location_tag: location,
-        posture,
-        pre_nap_sleepiness: preNapSleepiness ? String(preNapSleepiness) : '',
-      },
+      params: { ...resultParams, reminder_id: reminderId ?? '' },
     });
   };
 
   const startTimer = () => {
-    startTimeRef.current = nowTimeString();
-    totalSecondsRef.current = durationMinutes * 60;
+    const now = Date.now();
+    startTimeRef.current = nowTimeString(new Date(now));
+    startedAtRef.current = now;
+    endAtRef.current = now + durationMinutes * 60 * 1000;
     setRemainingSeconds(durationMinutes * 60);
     setPhase('running');
+
+    // Ask for permission now (while the user is awake) and schedule the evaluation
+    // reminder for "end of nap + 5 min". Scheduling up front keeps it reliable even if
+    // the app is suspended during the nap.
+    const fullParams = buildResultParams(durationMinutes);
+    reminderRef.current = ensureNotificationPermission().then((granted) =>
+      granted
+        ? scheduleNapEvaluationReminder(fullParams, durationMinutes * 60 + REMINDER_DELAY_SECONDS)
+        : undefined,
+    );
+
+    // Derive remaining time from the wall clock so the countdown catches up after backgrounding.
     intervalRef.current = setInterval(() => {
-      setRemainingSeconds((prev) => {
-        if (prev <= 1) {
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          if (Platform.OS !== 'web') Vibration.vibrate();
-          finishNap(durationMinutes);
-          return 0;
-        }
-        return prev - 1;
-      });
+      const remaining = Math.max(0, Math.ceil((endAtRef.current - Date.now()) / 1000));
+      setRemainingSeconds(remaining);
+      if (remaining <= 0) {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        if (Platform.OS !== 'web') Vibration.vibrate();
+        playTimerCompleteHaptic();
+        finishNap(durationMinutes, false);
+      }
     }, 1000);
   };
 
   const stopEarly = () => {
-    const elapsedSeconds = totalSecondsRef.current - remainingSeconds;
+    const elapsedSeconds = (Date.now() - startedAtRef.current) / 1000;
     const elapsedMinutes = Math.max(1, Math.round(elapsedSeconds / 60));
-    finishNap(elapsedMinutes);
+    finishNap(elapsedMinutes, true);
   };
 
   if (phase === 'running') {
@@ -155,14 +235,14 @@ export default function NapStartScreen() {
           <View style={styles.stepperRow}>
             <Pressable
               style={[styles.stepperButton, { backgroundColor: theme.background, borderColor: theme.border }]}
-              onPress={() => setDurationMinutes((m) => Math.max(5, m - 5))}
+              onPress={() => setDurationMinutes((m) => Math.max(MIN_DURATION, m - 5))}
             >
               <ThemedText type="smallBold">-5</ThemedText>
             </Pressable>
             <ThemedText type="subtitle">{durationMinutes}分</ThemedText>
             <Pressable
               style={[styles.stepperButton, { backgroundColor: theme.background, borderColor: theme.border }]}
-              onPress={() => setDurationMinutes((m) => Math.min(60, m + 5))}
+              onPress={() => setDurationMinutes((m) => Math.min(MAX_DURATION, m + 5))}
             >
               <ThemedText type="smallBold">+5</ThemedText>
             </Pressable>
