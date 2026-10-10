@@ -8,6 +8,12 @@ export async function getAllNapLogs(): Promise<NapLog[]> {
   return logs.sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+/** The most recently recorded nap, or undefined if none exists yet. */
+export async function getLatestNapLog(): Promise<NapLog | undefined> {
+  const logs = await getAllNapLogs();
+  return logs[0];
+}
+
 export async function addNapLog(draft: NapLogDraft): Promise<NapLog> {
   const logs = await getList<NapLog>(NAP_LOGS_KEY);
   const log: NapLog = {
