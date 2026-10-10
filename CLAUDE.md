@@ -1,6 +1,10 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 @AGENTS.md
 
-# 仮眠最適化アプリ (nap-optimizer)
+## 仮眠最適化アプリ (nap-optimizer)
 
 ビジネスパーソン向けに、仮眠の条件(時間帯・場所・姿勢)と仮眠後のパフォーマンスを記録し、
 自分に合う仮眠パターンを見つけるアプリ。前夜の睡眠時間から「睡眠負債」も表示する。
@@ -27,29 +31,18 @@
 npm install          # 依存関係のインストール(クラウド環境では最初に必要)
 npx expo start --web # Web で起動して画面を確認
 npx tsc --noEmit     # 型チェック(変更後は必ず通す)
-npm run lint         # expo lint
 ```
 
-自動テストはまだない。変更後は最低限、型チェックを通し、可能なら Web で起動して画面を確認する。
+- 自動テストはまだない。変更後は最低限、型チェックを通し、可能なら Web で起動して画面を確認する。
+- `npm run lint`(expo lint)は ESLint の設定ファイルが無いため、実行すると設定を自動インストールしようとしてネットワークエラーになる。lint を使うなら先に設定を追加する必要がある。
 
-## ディレクトリ構成
+## 全体の仕組み
 
-```
-src/
-  app/              画面(expo-router のルート)
-    (tabs)/         ホーム(index.tsx)・週次グラフ(stats.tsx)
-    nap/            仮眠タイマー(start.tsx)・仮眠後評価(result.tsx)
-    sleep/          睡眠記録入力(log.tsx)
-  components/       共通 UI(button, card, score-selector, time-field, themed-*)
-  constants/theme.ts 色(Colors)・余白(Spacing)・フォント
-  hooks/            useTheme / useColorScheme
-  lib/
-    types.ts        データ型(NapLog, SleepLog)と選択肢の定数
-    storage.ts      AsyncStorage の読み書きと ID 生成
-    napRepository.ts / sleepRepository.ts  記録の追加・取得・削除
-    settings.ts     目標睡眠時間などの設定
-    date.ts         日付・時刻のユーティリティ
-```
+- **画面遷移**: ルート `src/app/_layout.tsx` の Stack に、タブ `(tabs)`(ホーム・週次グラフ)と、`nap/start`・`sleep/log`(モーダル)、`nap/result` が並ぶ。
+- **仮眠記録の流れ**: `nap/start` で条件を選びタイマー開始 → 終了時に `router.replace` で `nap/result` へ。仮眠データは **URL パラメータ(すべて文字列)** で渡し、`nap/result` で評価を入力して初めて `addNapLog` で保存する。保存後は `router.dismissAll()` でホームに戻る。項目を増やすときは start の params と result の受け取り・数値変換の両方を直す。
+- **データ層**: `lib/storage.ts` が「キーごとに JSON 配列を丸ごと読み書き」する薄い層。`napRepository` / `sleepRepository` / `settings` がその上にあり、キーは `@nap_optimizer/...`。
+- **睡眠記録**: 1 日 1 件。同じ日付で保存すると上書きされる。`sleep_hours`(手入力が優先、無ければ就寝・起床から計算)と `sleep_debt`(目標 − 実睡眠)は **保存時に計算して記録に埋め込む**。後から目標睡眠時間(`settings.ts`、既定 7 時間)を変えても過去の負債は変わらない。
+- **表示側**: タブ画面は `useFocusEffect` で表示のたびに読み直す(グローバルな状態管理は無い)。週次グラフは直近 7 日分を集計し、仮眠のパフォーマンススコアは `(集中力 + (6 − 眠気)) / 2`(`(tabs)/stats.tsx`)。
 
 ## コードの書き方
 
