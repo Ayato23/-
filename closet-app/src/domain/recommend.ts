@@ -52,7 +52,10 @@ function goodCount(closet: Item[], profile: Profile, today: string, outfits: Out
 
 export function rankStaples(closet: Item[], profile: Profile, today: string, outfits: Outfit[]): Suggestion[] {
   const base = goodCount(closet, profile, today, outfits);
-  const staples = STAPLES.filter((s) => profile.style === 'unisex' || s.styles.includes(profile.style));
+  const owned = new Set(closet.map((i) => `${i.subcategory}|${i.colors[0]}`));
+  const staples = STAPLES.filter(
+    (s) => (profile.style === 'unisex' || s.styles.includes(profile.style)) && !owned.has(`${s.item.subcategory}|${s.item.colors[0]}`),
+  );
   const results: Suggestion[] = [];
   for (const s of staples) {
     const virtual: Item = { ...s.item, id: `staple:${s.id}`, photoUri: '', status: 'available', createdAt: '' };

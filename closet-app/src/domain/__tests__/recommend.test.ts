@@ -1,5 +1,5 @@
 import { missingFor, rankStaples } from '../recommend';
-import { ctx, mens, standardCloset, weather } from './fixtures';
+import { ctx, makeItem, mens, standardCloset, weather } from './fixtures';
 
 it('suggests shoes when none are owned', () => {
   const closet = standardCloset().filter((i) => i.category !== 'shoes');
@@ -30,4 +30,20 @@ describe('rankStaples', () => {
     expect(res.length).toBeLessThanOrEqual(5);
     expect(res[0].reason).toMatch(/新たに\d+コーデ組めます/);
   });
+});
+
+it('does not recommend a staple the user already owns (same type and main color)', () => {
+  const closet = [
+    makeItem({ id: 'shirtW', category: 'tops', subcategory: 'shirt', colors: ['white'], formality: 4 }),
+    makeItem({ id: 'knitN', category: 'tops', subcategory: 'knit', colors: ['navy'], material: 'wool', warmth: 3, formality: 3 }),
+    makeItem({ id: 'slacks', category: 'bottoms', subcategory: 'slacks', colors: ['charcoal'], material: 'wool', formality: 4 }),
+    makeItem({ id: 'jeans', category: 'bottoms', subcategory: 'jeans', colors: ['blue'], material: 'denim', formality: 2 }),
+    makeItem({ id: 'leather', category: 'shoes', subcategory: 'leatherShoes', colors: ['black'], material: 'leather', formality: 4 }),
+    makeItem({ id: 'sneakers', category: 'shoes', subcategory: 'sneakers', colors: ['white'], material: 'canvas', formality: 2 }),
+    makeItem({ id: 'jacket', category: 'outer', subcategory: 'tailoredJacket', colors: ['navy'], material: 'wool', warmth: 3, formality: 4 }),
+  ];
+  const ids = rankStaples(closet, mens, '2026-11-06', []).map((s) => s.id);
+  expect(ids).not.toContain('blackLeather');
+  expect(ids).not.toContain('navyJacket');
+  expect(ids).not.toContain('whiteShirt');
 });
