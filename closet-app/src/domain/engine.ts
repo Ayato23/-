@@ -102,6 +102,21 @@ function topOf(p: Prepared, ctx: Ctx, category: Category, n: number): Item[] {
     .map((x) => x.i);
 }
 
+/** 足りない理由を「未登録」と「持っているが使えない」に分けて返す */
+function unavailable(input: SuggestInput, categories: Category[], label: string): string {
+  const { closet, ctx } = input;
+  const owned = closet.filter((i) => categories.includes(i.category));
+  if (owned.length === 0) return `${label}が未登録です`;
+  const season = seasonOf(ctx.today);
+  const reasons = new Set<string>();
+  for (const i of owned) {
+    if (i.status !== 'available') reasons.add(i.status === 'laundry' ? '洗濯中' : 'クリーニング中');
+    else if (violations(i, ctx.occasion, ctx.profile).length > 0) reasons.add('この場面に合わない');
+    else if (i.seasons.length > 0 && !i.seasons.includes(season)) reasons.add('季節外');
+  }
+  return `使える${label}がありません(${[...reasons].join('・') || '条件に合わない'})`;
+}
+
 function build(input: SuggestInput): { candidates: Candidate[]; missing: string[]; prepared: Prepared } {
   const { ctx } = input;
   const n = input.topN ?? 8;
@@ -118,12 +133,12 @@ function build(input: SuggestInput): { candidates: Candidate[]; missing: string[
   if (heroCat !== 'onepiece') for (const t of tops) for (const b of bottoms) bases.push([t, b]);
   if (heroCat !== 'tops' && heroCat !== 'bottoms') for (const o of onepieces) bases.push([o]);
 
-  if (bases.length === 0) missing.push('トップスとボトムス(またはワンピース)が未登録です');
-  if (shoes.length === 0) missing.push('靴が未登録です');
+  if (bases.length === 0) missing.push(unavailable(input, ['tops', 'bottoms', 'onepiece'], 'トップスとボトムス(またはワンピース)'));
+  if (shoes.length === 0) missing.push(unavailable(input, ['shoes'], '靴'));
 
   const offset = OCCASION_RULES[ctx.occasion].warmthOffset;
   const outerRequired = needsOuter(ctx.weather, offset) || heroCat === 'outer';
-  if (outerRequired && outers.length === 0) missing.push('この気温に合うアウターが未登録です');
+  if (outerRequired && outers.length === 0) missing.push(unavailable(input, ['outer'], 'この気温に合うアウター'));
   const outerOptions: (Item | undefined)[] =
     outers.length === 0 ? [undefined] : outerRequired ? outers : [undefined, ...outers];
 
@@ -162,10 +177,11 @@ function addExtras(c: Candidate, input: SuggestInput, p: Prepared): Candidate {
   for (const cat of ['bag', 'accessory'] as Category[]) {
     const pick = topOf(p, ctx, cat, 1)[0];
     if (!pick) continue;
+    const isHero = pick.id === p.hero?.id;
     const next = [...items, pick];
-    if (outfitViolations(next, ctx.occasion, ctx.profile).length > 0) continue;
+    if (!isHero && outfitViolations(next, ctx.occasion, ctx.profile).length > 0) continue;
     const ev = evaluate(next, ctx);
-    if (ev.total < best.evaluation.total) continue;
+    if (!isHero && ev.total < best.evaluation.total) continue;
     items = next;
     best = { itemIds: next.map((i) => i.id), score: scoreOf(next, ev, ctx, p), evaluation: ev };
   }

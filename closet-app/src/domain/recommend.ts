@@ -22,7 +22,7 @@ export function missingFor(input: SuggestInput): Suggestion[] {
   const out: Suggestion[] = [];
   const res = suggest(input);
   for (const m of res.missing) {
-    const s = STRUCTURAL.find((x) => m.includes(x.match) && !m.includes('手持ち'));
+    const s = m.endsWith('未登録です') ? STRUCTURAL.find((x) => m.includes(x.match)) : undefined;
     if (s) out.push({ id: `missing:${s.match}`, label: s.label, reason: m, searchKeyword: s.keyword });
   }
   const usable = closet.filter((i) => violations(i, ctx.occasion, ctx.profile).length === 0);

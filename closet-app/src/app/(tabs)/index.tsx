@@ -27,6 +27,13 @@ export default function CoordinateScreen() {
   const [result, setResult] = useState<SuggestResult | null>(null);
   const [savedIds, setSavedIds] = useState<Record<number, string>>({});
 
+  // 条件を変えたら、古い条件で組んだ提案は消す
+  const changed = <T,>(setter: (v: T) => void) => (v: T) => {
+    setter(v);
+    setResult(null);
+    setSavedIds({});
+  };
+
   const byId = new Map(items.map((i) => [i.id, i]));
   const hero = heroId ? byId.get(heroId) : undefined;
   const today = todayISO();
@@ -72,16 +79,16 @@ export default function CoordinateScreen() {
           ),
         }}
       />
-      <WeatherBar value={weather} onChange={setWeather} />
+      <WeatherBar value={weather} onChange={changed(setWeather)} />
       <Label>場面</Label>
-      <ChipSelect options={OCCASIONS} value={occasion} onChange={setOccasion} />
+      <ChipSelect options={OCCASIONS} value={occasion} onChange={changed(setOccasion)} />
       <Label>テイスト</Label>
-      <ChipSelect options={TASTES} value={taste} onChange={setTaste} />
+      <ChipSelect options={TASTES} value={taste} onChange={changed(setTaste)} />
       <Label>主役の服(任意)</Label>
       <View style={styles.heroRow}>
         <Body>{hero ? `★ ${hero.brand ? `${hero.brand} ` : ''}${subcategoryLabel(hero.subcategory)}` : 'なし'}</Body>
         <Button small variant="secondary" title={pickingHero ? '閉じる' : '選ぶ'} onPress={() => setPickingHero((v) => !v)} />
-        {hero && <Button small variant="secondary" title="解除" onPress={() => setHeroId(undefined)} />}
+        {hero && <Button small variant="secondary" title="解除" onPress={() => changed(setHeroId)(undefined)} />}
       </View>
       {pickingHero && (
         <ScrollView horizontal contentContainerStyle={styles.heroList}>
@@ -91,7 +98,7 @@ export default function CoordinateScreen() {
                 item={i}
                 selected={i.id === heroId}
                 onPress={() => {
-                  setHeroId(i.id);
+                  changed(setHeroId)(i.id);
                   setPickingHero(false);
                 }}
               />

@@ -116,3 +116,27 @@ it('ignores outfits that reference deleted items', () => {
   const wearLogs: WearLog[] = [{ id: 'l', outfitId: 'missing', date: '2026-11-05' }];
   expect(() => suggest(input({ outfits, wearLogs, heroItemId: 'ghost' }))).not.toThrow();
 });
+
+describe('review fixes', () => {
+  it('says items are out of season instead of unregistered', () => {
+    const closet = standardCloset().map((i) => ({ ...i, seasons: ['summer' as const] }));
+    const res = suggest(input({ closet }));
+    expect(res.missing.join()).not.toContain('未登録');
+    expect(res.missing.join()).toContain('季節');
+  });
+  it('says shoes are in the laundry instead of unregistered', () => {
+    const closet = standardCloset().map((i) => (i.category === 'shoes' ? { ...i, status: 'laundry' as const } : i));
+    const res = suggest(input({ closet }));
+    expect(res.missing.join()).not.toContain('未登録');
+    expect(res.missing.join()).toContain('洗濯中');
+  });
+  it('always includes a bag chosen as the hero', () => {
+    const closet = [
+      ...standardCloset(),
+      makeItem({ id: 'pinkBag', category: 'bag', subcategory: 'shoulder', colors: ['pink'], pattern: 'print' }),
+    ];
+    const { candidates } = suggest(input({ closet, heroItemId: 'pinkBag' }));
+    expect(candidates.length).toBeGreaterThan(0);
+    for (const c of candidates) expect(c.itemIds).toContain('pinkBag');
+  });
+});

@@ -50,6 +50,9 @@ export function WeatherBar({ value, onChange }: { value: WeatherSnapshot | null;
       setDays([]);
       onChange(DEFAULT_WEATHER(todayISO()));
     };
+    // 取得を待つ間も操作できるよう、まず仮の天気を入れておく
+    setNote('天気を取得中…(仮の天気で組めます)');
+    onChange(DEFAULT_WEATHER(todayISO()));
     (async () => {
       if (!profile.useLocation) return fallback('位置情報オフのため手動設定です(タップして変更)');
       const coords = await getCurrentCoords();

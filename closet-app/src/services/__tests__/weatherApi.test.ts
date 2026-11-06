@@ -26,3 +26,34 @@ it('returns [] for malformed input', () => {
   expect(parseForecast(null)).toEqual([]);
   expect(parseForecast({ daily: { time: 'x' } })).toEqual([]);
 });
+
+describe('timeouts', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('getCurrentCoords returns null when location never answers', async () => {
+    jest.resetModules();
+    jest.doMock('expo-location', () => ({
+      requestForegroundPermissionsAsync: () => Promise.resolve({ status: 'granted' }),
+      getCurrentPositionAsync: () => new Promise(() => {}),
+    }));
+    jest.useFakeTimers();
+    const { getCurrentCoords } = require('../weatherApi');
+    const p = getCurrentCoords(1000);
+    await jest.advanceTimersByTimeAsync(1001);
+    await expect(p).resolves.toBeNull();
+  });
+
+  it('fetchForecast rejects when the server never answers', async () => {
+    jest.useFakeTimers();
+    const { fetchForecast } = require('../weatherApi');
+    const original = globalThis.fetch;
+    globalThis.fetch = jest.fn((_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise((_res, rej) => init?.signal?.addEventListener('abort', () => rej(new Error('aborted')))),
+    ) as unknown as typeof fetch;
+    const p = fetchForecast(35, 139, 1000);
+    const assertion = expect(p).rejects.toThrow();
+    await jest.advanceTimersByTimeAsync(1001);
+    await assertion;
+    globalThis.fetch = original;
+  });
+});

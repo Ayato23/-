@@ -47,3 +47,9 @@ it('does not recommend a staple the user already owns (same type and main color)
   expect(ids).not.toContain('navyJacket');
   expect(ids).not.toContain('whiteShirt');
 });
+
+it('does not tell the user to buy shoes that are only in the laundry', () => {
+  const closet = standardCloset().map((i) => (i.category === 'shoes' ? { ...i, status: 'laundry' as const } : i));
+  const res = missingFor({ closet, ctx: ctx(), outfits: [], wearLogs: [] });
+  expect(res.some((s) => s.id.startsWith('missing:'))).toBe(false);
+});
